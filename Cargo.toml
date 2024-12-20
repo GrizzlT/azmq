@@ -1,0 +1,14 @@
+[package]
+name = "azmq"
+version = "0.1.0"
+authors = [ "13691001+GrizzlT@users.noreply.github.com" ]
+edition = "2021"
+rust-version = "1.56.0"
+description = "Executor and OS agnostic asynchronous abstractions around libzmq"
+readme = "README.md"
+license = "MIT/Apache-2.0"
+keywords = [ "async", "zeromq", "zmq", "wrapper" ]
+categories = [ "asynchronous", "network-programming" ]
+
+[dependencies]
+zmq = "0.10"
