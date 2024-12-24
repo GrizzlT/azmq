@@ -11,4 +11,4 @@ keywords = [ "async", "zeromq", "zmq", "wrapper" ]
 categories = [ "asynchronous", "network-programming" ]
 
 [dependencies]
-zmq = "0.10"
+zmq = "0.10.0"
