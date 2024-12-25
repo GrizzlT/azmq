@@ -12,3 +12,6 @@ categories = [ "asynchronous", "network-programming" ]
 
 [dependencies]
 zmq = "0.10.0"
+
+event-listener = "5.3.1"
+pin-project-lite = "0.2.15"
