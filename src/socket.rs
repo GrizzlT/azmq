@@ -8,6 +8,7 @@ use event_listener::EventListener;
 use pin_project_lite::pin_project;
 use zmq::{PollEvents, Socket};
 
+use crate::message::Sendable;
 use crate::poll_thread::Handle;
 use crate::{Multipart, Result};
 
@@ -19,28 +20,47 @@ pub struct AsyncSocket {
 }
 
 impl AsyncSocket {
+    pub fn inner(&self) -> &Socket {
+        &self.inner
+    }
+
+    pub fn blocking_send<T: Sendable>(&mut self, message: T) -> Result<()> {
+        message.send(&self.inner, 0)
+    }
+
+    /// # Safety
+    ///
+    /// This is one of the few calls that breaks the [`Send`] property of
+    /// zmq [`Socket`]s. We require a mutable borrow here so that we are sure
+    /// nothing else can interfere with this socket while we're polling for a
+    /// message.
     pub async fn recv(&mut self) -> Result<Multipart> {
+        // Fast path
+        //
+        // No lock is required here, the mutable borrow guarantees uniqueness of this
+        // scenario for this socket + not polling yet means it is not registered in
+        // the polling thread and thus not accessed outside of this type.
+        //
+        // This means it is safe to access the socket here.
+        let mut multipart = Multipart::new();
+        match self.inner.recv_msg(zmq::DONTWAIT) {
+            Ok(msg) => {
+                multipart.push_msg(msg.into());
+                while self.inner.get_rcvmore()? {
+                    multipart.push_msg(self.inner.recv_msg(zmq::DONTWAIT)?.into());
+                }
+                return Ok(multipart)
+            },
+            Err(zmq::Error::EAGAIN) => {}
+            Err(error) => {
+                return Err(error)
+            },
+        }
+
+        // Slow path
         let event = {
-            // Fast path
-            //
-            // Acquiring the mutex once is faster than registering and waiting
-            // for polling, good choice for multiple messages being buffered at
-            // the same time.
+            // Now we do need the lock to access the polling structure
             let mut sockets = self.handle.park()?;
-            let mut multipart = Multipart::new();
-            match self.inner.recv_msg(zmq::DONTWAIT) {
-                Ok(msg) => {
-                    multipart.push_msg(msg.into());
-                    while self.inner.get_rcvmore()? {
-                        multipart.push_msg(self.inner.recv_msg(zmq::DONTWAIT)?.into());
-                    }
-                    return Ok(multipart)
-                },
-                Err(zmq::Error::EAGAIN) => {}
-                Err(error) => {
-                    return Err(error)
-                },
-            }
             sockets.register_interest(self.key, PollEvents::POLLIN);
             self.handle.event().listen()
         };
@@ -101,7 +121,9 @@ impl Future for Recv<'_> {
                             Ok(Some(multipart))
                         }
                         Err(zmq::Error::EAGAIN) => Ok(None),
-                        Err(error) => Err(error),
+                        Err(error) => {
+                            Err(error)
+                        },
                     }
                 })();
 

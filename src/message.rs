@@ -2,9 +2,81 @@ use std::{ops::{Deref, DerefMut}, slice::SliceIndex};
 
 use zmq::Message as ZmqMessage;
 
+use crate::{AsyncSocket, Result};
+
+mod private {
+    use crate::AsyncSocket;
+
+    pub trait Sealed {}
+
+    impl Sealed for zmq::Socket {}
+    impl Sealed for AsyncSocket {}
+}
+
+pub trait Sender: private::Sealed {
+    /// Queues a single message to be sent with zmq
+    fn send(&self, message: Message, flags: i32) -> Result<()>;
+}
+
+impl Sender for zmq::Socket {
+    /// Transparent send call
+    fn send(&self, message: Message, flags: i32) -> Result<()> {
+        self.send(message.into_inner(), flags)
+    }
+}
+
+impl Sender for AsyncSocket {
+    /// Forces non-blocking mode
+    fn send(&self, message: Message, flags: i32) -> Result<()> {
+        self.inner.send(message.into_inner(), flags | zmq::DONTWAIT)
+    }
+}
+
+pub trait Sendable {
+    /// Writes the data to the socket
+    ///
+    /// # Requirements
+    /// This method **must not** block.
+    /// This method **must** write only a single message. This is allowed to be
+    /// a multipart message.
+    fn send<T: Sender>(self, socket: &T, flags: i32) -> Result<()>;
+}
+
+impl Sendable for Message {
+    fn send<T: Sender>(self, socket: &T, flags: i32) -> Result<()> {
+        socket.send(self, flags)
+    }
+}
+
+impl Sendable for Multipart {
+    fn send<T: Sender>(self, socket: &T, flags: i32) -> Result<()> {
+        let len = self.len();
+        for (is_last, message) in self.into_iter().enumerate().map(|(i, m)| (i == len - 1, m)) {
+            if is_last {
+                socket.send(message, flags)?;
+            } else {
+                socket.send(message, flags | zmq::SNDMORE)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct Message {
     inner: ZmqMessage,
+}
+
+impl Message {
+    pub fn empty() -> Self {
+        Self {
+            inner: ZmqMessage::new(),
+        }
+    }
+
+    pub fn into_inner(self) -> ZmqMessage {
+        self.inner
+    }
 }
 
 impl Deref for Message {

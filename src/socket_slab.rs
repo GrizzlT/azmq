@@ -10,8 +10,19 @@ pub struct PollSlab {
     next: usize,
 }
 
+impl std::fmt::Debug for PollSlab {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PollSlab")
+            .field("keys", &self.keys)
+            .field("entry_idx", &self.entry_idx)
+            .field("scheduled", &self.scheduled)
+            .field("next", &self.next).finish()
+    }
+}
+
 unsafe impl Send for PollSlab {}
 
+#[derive(Debug)]
 enum Entry<T> {
     Vacant(usize),
     Occupied(T),
@@ -78,7 +89,7 @@ impl PollSlab {
     }
 
     pub(crate) fn mark_changed(&self) {
-        for (i, item) in self.poll_items.iter().skip(1).enumerate() {
+        for (i, item) in self.poll_items.iter().enumerate().skip(1) {
             if !item.get_revents().is_empty() {
                 self.notify_socket_internal(i);
             }
@@ -144,8 +155,8 @@ impl PollSlab {
                 Entry::Occupied(idx) => {
                     self.next = key;
                     self.swap_items(idx, self.len());
-                    self.poll_items.remove(self.len());
                     self.entry_idx.remove(self.len());
+                    self.poll_items.remove(self.len());
                 }
                 _ => {
                     // Woops, the entry is actually vacant, restore the state
@@ -171,9 +182,11 @@ impl PollSlab {
     }
 
     pub fn deregister(&mut self, socket: usize) {
-        if socket < self.scheduled {
-            self.swap_items(socket, self.scheduled-1);
-            self.scheduled -= 1;
+        if let Some(&Entry::Occupied(key)) = self.keys.get(socket) {
+            if key < self.scheduled {
+                self.swap_items(key, self.scheduled-1);
+                self.scheduled -= 1;
+            }
         }
     }
 
@@ -227,6 +240,7 @@ mod tests {
         let key2 = slab.insert(&socket2).0;
 
         slab.remove(key1);
+        println!("{:?}", slab);
         assert_eq!(1, slab.len());
         assert_eq!(2, slab.memory_in_use());
         let key = slab.insert(&socket1).0;
@@ -234,6 +248,15 @@ mod tests {
         assert!(slab.get(key2).unwrap().has_socket(&socket2));
         assert_eq!(0, key);
         assert_eq!(2, slab.len());
+        assert_eq!(2, slab.memory_in_use());
+
+        slab.remove(key);
+        assert_eq!(1, slab.len());
+        assert_eq!(2, slab.memory_in_use());
+
+        slab.remove(key2);
+        println!("{:?}", slab);
+        assert_eq!(0, slab.len());
         assert_eq!(2, slab.memory_in_use());
     }
 
@@ -249,6 +272,8 @@ mod tests {
         let key1 = slab.insert(&socket1).0;
         let key2 = slab.insert(&socket2).0;
 
+        slab.swap_items(1, 2);
+        slab.swap_items(1, 2);
         slab.swap_items(1, 2);
 
         assert!(slab.get(key1).unwrap().has_socket(&socket1));

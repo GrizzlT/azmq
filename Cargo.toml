@@ -15,3 +15,8 @@ zmq = "0.10.0"
 
 event-listener = "5.3.1"
 pin-project-lite = "0.2.15"
+
+[dev-dependencies]
+async-std = { version = "1.13.0", features = [ "attributes" ] }
+tokio = { version = "1.42.0", features = [ "rt", "macros", "rt-multi-thread" ] }
+paste = "1.0.15"
