@@ -20,12 +20,18 @@ pub struct AsyncSocket {
 }
 
 impl AsyncSocket {
-    pub fn inner(&self) -> &Socket {
-        &self.inner
-    }
-
     pub fn blocking_send<T: Sendable>(&mut self, message: T) -> Result<()> {
         message.send(&self.inner, 0)
+    }
+
+    pub fn blocking_recv(&self) -> Result<Multipart> {
+        let message = self.inner.recv_msg(0)?;
+        let mut multipart = Multipart::new();
+        multipart.push_msg(message.into());
+        while self.inner.get_rcvmore()? {
+            multipart.push_msg(self.inner.recv_msg(0)?.into());
+        }
+        Ok(multipart)
     }
 
     /// # Safety

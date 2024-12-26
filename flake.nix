@@ -32,7 +32,7 @@
     devShells = forSystems ({ pkgs, mkDevShell, ... }: let
       mkShell = toolchain: mkDevShell (self: {
         nativeBuildInputs = [
-          pkgs.rust-bin.stable.latest.default
+          toolchain
         ];
       });
       msrvShadow = msrv;
